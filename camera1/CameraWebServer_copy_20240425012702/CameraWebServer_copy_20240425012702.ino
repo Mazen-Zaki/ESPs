@@ -51,6 +51,12 @@ const char *MQTT_PASSWORD = "259bhmopuv";
 /* MQTT TOPICS */
 const char *mqtt_topic_1 = "18ciqt4398/robotWeb";
 
+
+//JsonDocument <10000> doc;
+StaticJsonDocument<10000> jsonDoc;
+uint8_t jsonChar[10000];
+
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -229,39 +235,85 @@ void setup() {
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
   pinMode (LED_GPIO_NUM, OUTPUT);//Specify that LED pin is output
+  pinMode(Y2_GPIO_NUM, INPUT_PULLUP);
 }
 
-void loop() {
+void loop() 
+{
 
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
 
+  int val = 1;
+  val = digitalRead(Y2_GPIO_NUM);   // read the input pin
+  //digitalWrite(LED_GPIO_NUM, val);  // sets the LED to the button's value
+
+  digitalWrite(LED_GPIO_NUM, HIGH);  // sets the LED to the button's value
+
+  
+
+  //client.publish(mqtt_topic_1, "jsonChar");
+
   // Capture a frame from the camera
   camera_fb_t* fb = NULL;
   fb = esp_camera_fb_get();
+  size_t jsonLength;
   
   if (fb) 
   {
     size_t imageSize = fb->len;
     uint8_t* imageBuffer = fb->buf;
 
-    DynamicJsonDocument doc(1024 + imageSize);
-    doc["robotId"] = "db5f04";
+    
     String base64Encoded = base64::encode(imageBuffer, imageSize);
-    doc["stream"] = base64Encoded;
-    doc["camNo"] = 1;
-    doc["length"] = imageSize;
 
-    char jsonChar[1024 + imageSize];
-    size_t jsonLength = serializeJson(doc, jsonChar, sizeof(jsonChar));
+    String robotID = "db5f04";
 
-    client.publish(mqtt_topic_1, jsonChar, jsonLength);
+    jsonDoc["robotId"] = robotID;
+    jsonDoc["length"] = imageSize;
+    jsonDoc["camNO"] = "1";
+    jsonDoc["stream"] = base64Encoded;
+    
+    
+    
+    jsonLength = serializeJson(jsonDoc, jsonChar);  // Leave space for null terminator
+    //jsonChar[jsonLength] = '\0';  // Add null terminator manually
+
+  if (jsonLength > 0) {
+    // Successful serialization, proceed with publishing
+} else {
+    Serial.println("Failed to serialize JSON data");
+    // Handle serialization error
+}
+    
+
+    //Serial.println(jsonChar);
     esp_camera_fb_return(fb);
   }
 
+if (client.beginPublish(mqtt_topic_1, jsonLength, false)) 
+{ // Adjust the retained parameter as needed
 
+  // Write JSON data to the MQTT message
+  client.write(jsonChar, jsonLength);
+  //client.publish(mqtt_topic_1, jsonChar, jsonLength);
+
+  // End MQTT message publishing
+  if (client.endPublish()) {
+    Serial.println("JSON data published successfully to MQTT topic.");
+  }
+  else
+  {
+    Serial.println("Failed to end MQTT message publishing.");
+  }
+
+} 
+else 
+{
+  Serial.println("Failed to begin MQTT message publishing.");
+}
   // Publish the frame via MQTT
   //sendStreamMQTT(fb->buf, fb->len);
   
@@ -272,7 +324,7 @@ void loop() {
 
 
   // Do nothing. Everything is done in another task by the web server
-  digitalWrite(LED_GPIO_NUM, HIGH);
+  //digitalWrite(LED_GPIO_NUM, HIGH);
   delay(1000);
   //digitalWrite(LED_GPIO_NUM, LOW);
   //delay(3000);
